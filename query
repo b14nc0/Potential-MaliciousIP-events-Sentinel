@@ -1,0 +1,39 @@
+// Introudciomos los dias de datos que queremos mostrar
+let daystoSearch = 7d; 
+// Ajusta tu ubicacion con Longitude / Latitude 
+let myLongitude= -0.925915; 
+let myLatitude = 51.461377;
+
+union isfuzzy=true 
+(W3CIISLog
+| extend TrafficDirection = "InboundOrUnknown", Country=RemoteIPCountry, Latitude=RemoteIPLatitude, Longitude=RemoteIPLongitude), 
+(DnsEvents
+| extend TrafficDirection = "InboundOrUnknown", Country= RemoteIPCountry, Latitude = RemoteIPLatitude, Longitude = RemoteIPLongitude),
+(WireData
+| extend TrafficDirection = iff(Direction != "Outbound","InboundOrUnknown", "Outbound"), Country=RemoteIPCountry, Latitude=RemoteIPLatitude, Longitude=RemoteIPLongitude), 
+(WindowsFirewall
+| extend TrafficDirection = iff(CommunicationDirection != "SEND","InboundOrUnknown", "Outbound"), Country=MaliciousIPCountry, Latitude=MaliciousIPLatitude, Longitude=MaliciousIPLongitude), 
+(CommonSecurityLog
+| extend TrafficDirection = iff(CommunicationDirection != "Outbound","InboundOrUnknown", "Outbound"), Country=MaliciousIPCountry, Latitude=MaliciousIPLatitude, Longitude=MaliciousIPLongitude, Confidence=ThreatDescription, Description=ThreatDescription), 
+(VMConnection
+| where Type == "VMConnection"
+| extend TrafficDirection = iff(Direction != "outbound","InboundOrUnknown", "Outbound"), Country=RemoteCountry, Latitude=RemoteLatitude, Longitude=RemoteLongitude)
+// main
+| where TimeGenerated > startofday(ago(daystoSearch)) and TimeGenerated < startofday(now()) 
+| where isnotempty(MaliciousIP) and isnotempty(Country) and isnotempty(Latitude) and isnotempty(Longitude)
+| extend distance_in_kilometers = geo_distance_2points(Longitude, Latitude, myLongitude, myLatitude)/1000.00 
+| extend distance_in_miles = geo_distance_2points(Longitude, Latitude, myLongitude, myLatitude)/1609.344 
+| summarize count() by bin(TimeGenerated,1h),
+Country, 
+DistanceKM = strcat(round(distance_in_kilometers,1)),
+Type,
+TrafficDirection,
+IndicatorThreatType,
+MaliciousIP, 
+lon = Longitude, 
+lat = Latitude,
+DeviceVendor
+| sort by TimeGenerated asc
+
+
+// REF: https://techcommunity.microsoft.com/t5/microsoft-sentinel-blog/how-to-use-azure-monitor-workbooks-to-map-sentinel-data/ba-p/971818
